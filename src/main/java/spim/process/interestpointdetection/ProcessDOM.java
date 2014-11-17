@@ -3,15 +3,12 @@ package spim.process.interestpointdetection;
 import java.util.ArrayList;
 import java.util.Date;
 
-import mpicbg.imglib.image.Image;
-import mpicbg.imglib.type.numeric.integer.LongType;
-import mpicbg.imglib.type.numeric.real.FloatType;
 import mpicbg.spim.io.IOFunctions;
-import mpicbg.spim.segmentation.DOM;
-import mpicbg.spim.segmentation.IntegralImage3d;
 import mpicbg.spim.segmentation.InteractiveIntegral;
 import mpicbg.spim.segmentation.SimplePeak;
 import net.imglib2.img.Img;
+import net.imglib2.type.numeric.integer.LongType;
+import net.imglib2.type.numeric.real.FloatType;
 import spim.fiji.spimdata.interestpoints.InterestPoint;
 import spim.process.fusion.FusionHelper;
 
@@ -34,8 +31,7 @@ public class ProcessDOM
 	 * @return
 	 */
 	public static ArrayList< InterestPoint > compute( 
-			final Image< FloatType > img,
-			final Img< net.imglib2.type.numeric.real.FloatType > imglib2img,
+			final Img< FloatType > img,
 			final int radius1, 
 			final int radius2, 
 			final float threshold, 
@@ -48,13 +44,13 @@ public class ProcessDOM
 			final double minIntensity,
 			final double maxIntensity )
 	{
-		final Image< LongType > integralImg = IntegralImage3d.compute( img );
+		Img< LongType > integralImg = IntegralImage3d.compute( img );
 
 		final float min, max;
 
 		if ( Double.isNaN( minIntensity ) || Double.isNaN( maxIntensity ) || minIntensity == maxIntensity )
 		{
-			final float[] minmax = FusionHelper.minMax( imglib2img );
+			final float[] minmax = FusionHelper.minMax( img );
 			min = minmax[ 0 ];
 			max = minmax[ 1 ];
 		}
@@ -79,11 +75,11 @@ public class ProcessDOM
 		IOFunctions.println("(" + new Date(System.currentTimeMillis()) + "): Computing Difference-of-Mean, diameters = (" + sX1 + ", "  + sX2 + ", "  + sY1 + ", "  + sY2 + ", "  + sZ1 + ", "  + sZ2 + ")" );
 
 		// in-place overwriting img if no adjacent Gauss fit is required
-		final Image< FloatType > domImg;
+		final Img< FloatType > domImg;
 		
 		if ( localization == 2 )
 		{
-			domImg = img.createNewImage();
+			domImg = img.factory().create( img, img.firstElement() );
 		}
 		else
 		{
@@ -95,8 +91,8 @@ public class ProcessDOM
 		DOM.computeDifferencOfMean3d( integralImg, domImg, sX1, sY1, sZ1, sX2, sY2, sZ2, min, max );
 
 		// close integral img
-		integralImg.close();
-		
+		integralImg = null;
+
 		IOFunctions.println("(" + new Date(System.currentTimeMillis()) + "): Extracting peaks (radius=" + radius1 + ", threshold=" + threshold + ")");					
 
 		// compute the maxima/minima

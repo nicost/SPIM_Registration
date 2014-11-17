@@ -8,9 +8,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 
-import mpicbg.imglib.image.Image;
-import mpicbg.imglib.type.numeric.real.FloatType;
-import mpicbg.imglib.wrapper.ImgLib2;
 import mpicbg.spim.data.sequence.Angle;
 import mpicbg.spim.data.sequence.Channel;
 import mpicbg.spim.data.sequence.Illumination;
@@ -18,13 +15,13 @@ import mpicbg.spim.data.sequence.TimePoint;
 import mpicbg.spim.data.sequence.ViewDescription;
 import mpicbg.spim.data.sequence.ViewId;
 import mpicbg.spim.io.IOFunctions;
-import mpicbg.spim.segmentation.InteractiveIntegral;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.img.Img;
 import net.imglib2.img.display.imagej.ImageJFunctions;
 import net.imglib2.multithreading.SimpleMultiThreading;
 import spim.fiji.spimdata.SpimData2;
 import spim.fiji.spimdata.interestpoints.InterestPoint;
+import spim.process.interestpointdetection.InteractiveIntegral;
 import spim.process.interestpointdetection.ProcessDOM;
 
 
@@ -109,15 +106,12 @@ public class DifferenceOfMean extends DifferenceOf
 						benchmark.openFiles += time2 - time1;
 
 						preSmooth( input );
-						
-						final Image< FloatType > img = ImgLib2.wrapFloatToImgLib1( (Img<net.imglib2.type.numeric.real.FloatType>)input );
 
 						//
 						// compute Difference-of-Mean
 						//
 						final ArrayList< InterestPoint > ips =
 							ProcessDOM.compute(
-								img,
 								(Img<net.imglib2.type.numeric.real.FloatType>)input,
 								radius1[ c.getId() ],
 								radius2[ c.getId() ],
@@ -130,8 +124,6 @@ public class DifferenceOfMean extends DifferenceOf
 								findMax[ c.getId() ],
 								minIntensity,
 								maxIntensity );
-
-						img.close();
 
 						correctForDownsampling( ips );
 
@@ -249,7 +241,9 @@ public class DifferenceOfMean extends DifferenceOf
 		ii.setThreshold( (float)defaultThreshold[ channelId ] );
 		ii.setLookForMinima( defaultFindMin[ channelId ] );
 		ii.setLookForMaxima( defaultFindMax[ channelId ] );
-		
+		ii.setMinIntensity( minIntensity );
+		ii.setMaxIntensity( maxIntensity );
+
 		ii.run( null );
 		
 		while ( !ii.isFinished() )
