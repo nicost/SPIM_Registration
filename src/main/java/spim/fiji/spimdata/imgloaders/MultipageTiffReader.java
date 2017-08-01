@@ -124,6 +124,8 @@ public class MultipageTiffReader
 	/**
 	 * This constructor is used for opening datasets that have already been
 	 * saved
+	 * @param file - input file to be examined and opened if possible
+	 * @throws java.io.IOException
 	 */
 	public MultipageTiffReader( final File file ) throws IOException
 	{
@@ -146,12 +148,21 @@ public class MultipageTiffReader
 				Arrays.sort( list );
 
 				for ( final String fn : list )
-					if ( !fn.equals( file.getName() ) && fn.startsWith( begin ) && fn.toLowerCase().endsWith( ".ome.tif" ) || fn.toLowerCase().endsWith( ".ome.tiff" ) )
+				{
+					if ( !fn.equals( file.getName() ) && 
+							  fn.startsWith( begin ) && 
+							  fn.toLowerCase().endsWith( ".ome.tif" ) || 
+							  fn.toLowerCase().endsWith( ".ome.tiff" ) )
+					{
 						this.files.add( new File( dir, fn ) );
+					}
+				}
 			}
 
 			if ( lastDisplayedFile == null )
+			{
 				lastDisplayedFile = "";
+			}
 
 			if (!lastDisplayedFile.equals(file.getAbsolutePath()))
 			{
@@ -220,15 +231,19 @@ public class MultipageTiffReader
 		// here if needed
 		for (String key : imageTags.keySet())
 		{
-			if (key.equals(TAG_PIXELSIZE))
+			switch (key)
 			{
-				summaryMetadata_.put(TAG_PIXELSIZE, imageTags.get(TAG_PIXELSIZE));
-			} else if (key.equals("Width"))
-			{
-				summaryMetadata_.put("Width", imageTags.get("Width"));
-			} else if (key.equals("Height"))
-			{
-				summaryMetadata_.put("Height", imageTags.get("Height"));
+				case TAG_PIXELSIZE:
+					summaryMetadata_.put(TAG_PIXELSIZE, imageTags.get(TAG_PIXELSIZE));
+					break;
+				case "Width":
+					summaryMetadata_.put("Width", imageTags.get("Width"));
+					break;
+				case "Height":
+					summaryMetadata_.put("Height", imageTags.get("Height"));
+					break;
+				default:
+					break;
 			}
 		}
 
@@ -253,25 +268,29 @@ public class MultipageTiffReader
 		try
 		{
 			if ( summaryMetadata_ != null )
+			{
 				return summaryMetadata_.get( TAG_PIXELTYPE ).toString();
+			}
 		}
 		catch ( Exception e)
 		{
 			try
 			{
 				int ijType = Integer.parseInt( summaryMetadata_.get( "IJType" ).toString() );
-				if (ijType == ImagePlus.GRAY8) {
-					return "GRAY8";
-				} else if (ijType == ImagePlus.GRAY16) {
-					return "GRAY16";
-				} else if (ijType == ImagePlus.GRAY32) {
-					return "GRAY32";
-				} else if (ijType == ImagePlus.COLOR_RGB) {
-					return "RGB32";
-				} else {
-					throw new RuntimeException("Can't figure out pixel type");
-				}
+				switch (ijType)
+				{
+					case ImagePlus.GRAY8:
+						return "GRAY8";
 				// There is no IJType for RGB64.
+					case ImagePlus.GRAY16:
+						return "GRAY16";
+					case ImagePlus.GRAY32:
+						return "GRAY32";
+					case ImagePlus.COLOR_RGB:
+						return "RGB32";
+					default:
+						throw new RuntimeException("Can't figure out pixel type");
+				}
 			} catch ( Exception e2 ) {
 				throw new RuntimeException("Can't figure out pixel type");
 			}
@@ -335,7 +354,9 @@ public class MultipageTiffReader
 
 	public Set<String> getIndexKeys() {
 		if (indexMap_ == null)
+		{
 			return null;
+		}
 		return indexMap_.keySet();
 	}
 
@@ -360,14 +381,19 @@ public class MultipageTiffReader
 			final HashMap< String, Object > summaryMD = parseJSONSimple( getString( mdBuffer ) );
 
 			if ( summaryMD == null )
-				IOFunctions.printlnSafe( "Couldn't read summary Metadata from file: " + getFileForFileChannel( fileChannel ).getName() );
-
+			{
+				IOFunctions.printlnSafe( "Couldn't read summary Metadata from file: " + 
+						  getFileForFileChannel( fileChannel ).getName() );
+				return false;
+			}
+			
 			// MVRotationAxis = 0_1_0
 			// MVRotations = 0_90_0_90
 			// >>> channels increasing, angles increasing faster
 
 			// fake the multiviewdata if necessary
-			if ( !summaryMD.containsKey( "MVRotationAxis" ) ) {
+			if ( !summaryMD.containsKey( "MVRotationAxis" ) ) 
+			{
 				summaryMD.put( "MVRotationAxis", "0_1_0" );
 			}
 
@@ -375,7 +401,8 @@ public class MultipageTiffReader
 			{
 				final int numChannels = Integer.parseInt( summaryMD.get( "Channels" ).toString() );
 
-				switch (numChannels) {
+				switch (numChannels) 
+				{
 					case 2:
 						summaryMD.put( "MVRotations", "0_90" );
 						break;
@@ -409,11 +436,13 @@ public class MultipageTiffReader
 
 		// same order
 		for ( int i = 0; i < this.fileChannels.size(); ++i )
+		{
 			if ( this.fileChannels.get( i ) == fileChannel )
 			{
 				file = this.files.get( i );
 				break;
 			}
+		}
 
 		return file;
 	}
@@ -444,34 +473,31 @@ public class MultipageTiffReader
 			int valueStart = jsonString.indexOf( "\":" ) + 2;
 			int valueEnd;
 
-			if ( jsonString.charAt( valueStart ) == '[' )
+			switch (jsonString.charAt( valueStart ))
 			{
-				valueEnd = jsonString.indexOf( ']' ) + 1;
-			}
-			else if ( jsonString.charAt( valueStart ) == '{' )
-			{
-				valueEnd = valueStart + 1;
-				int nrUnfinishedStarts = 1;
-				while (nrUnfinishedStarts > 0 && valueEnd < jsonString.length()) {
-					if (jsonString.charAt(valueEnd) == '{') {
-						nrUnfinishedStarts++;
-					} else if (jsonString.charAt(valueEnd) == '}') {
-						nrUnfinishedStarts--;
-					}	
-					valueEnd++;
-				}
-			}
-			else if ( jsonString.charAt( valueStart ) == '\"' )
-			{
-				++valueStart;
-				valueEnd = jsonString.indexOf( '\"', valueStart );
-			}
-			else
-			{
-				valueEnd = jsonString.indexOf( ',' );
-				if ( valueEnd == -1 ) {
-					valueEnd = jsonString.length();
-				}
+				case '[':
+					valueEnd = jsonString.indexOf( ']' ) + 1;
+					break;
+				case '{':
+					valueEnd = valueStart + 1;
+					int nrUnfinishedStarts = 1;
+					while (nrUnfinishedStarts > 0 && valueEnd < jsonString.length()) {
+						if (jsonString.charAt(valueEnd) == '{') {
+							nrUnfinishedStarts++;
+						} else if (jsonString.charAt(valueEnd) == '}') {
+							nrUnfinishedStarts--;
+						}
+						valueEnd++;
+					}	break;
+				case '\"':
+					++valueStart;
+					valueEnd = jsonString.indexOf( '\"', valueStart );
+					break;
+				default:
+					valueEnd = jsonString.indexOf( ',' );
+					if ( valueEnd == -1 ) {
+						valueEnd = jsonString.length();
+					}	break;
 			}
 
 			final String value = jsonString.substring( valueStart, valueEnd );
@@ -580,18 +606,20 @@ public class MultipageTiffReader
 		for ( int i = 0; i < numEntries; ++i )
 		{
 			final IFDEntry entry = readDirectoryEntry( i * 12, entries );
-			if ( entry.tag == MM_METADATA )
+			switch (entry.tag)
 			{
-				data.mdOffset = entry.value;
-				data.mdLength = entry.count;
-			}
-			else if (entry.tag == STRIP_OFFSETS)
-			{
-				data.pixelOffset = entry.value;
-			}
-			else if (entry.tag == STRIP_BYTE_COUNTS)
-			{
-				data.bytesPerImage = entry.value;
+				case MM_METADATA:
+					data.mdOffset = entry.value;
+					data.mdLength = entry.count;
+					break;
+				case STRIP_OFFSETS:
+					data.pixelOffset = entry.value;
+					break;
+				case STRIP_BYTE_COUNTS:
+					data.bytesPerImage = entry.value;
+					break;
+				default:
+					break;
 			}
 		}
 
@@ -620,7 +648,9 @@ public class MultipageTiffReader
 		final HashMap< String, Object > md = parseJSONSimple( getString( mdBuffer ) );
 
 		if ( byteDepth_ == 0 )
+		{
 			getRGBAndByteDepth( md );
+		}
 
 		if ( rgb_ )
 		{
@@ -637,7 +667,9 @@ public class MultipageTiffReader
 			{
 				final short[] pix = new short[ pixelBuffer.capacity() / 2 ];
 				for ( int i = 0; i < pix.length; ++i )
+				{
 					pix[ i ] = pixelBuffer.getShort( i * 2 );
+				}
 
 				return new ValuePair<Object, HashMap< String, Object >>( pix, md );
 			}
@@ -652,10 +684,11 @@ public class MultipageTiffReader
 		final long value;
 
 		if (type == 3 && count == 1)
+		{
 			value = buffer.getChar(offset + 8);
-		else
+		} else {
 			value = unsignInt(buffer.getInt(offset + 8));
-
+		}
 		return ( new IFDEntry( tag, type, count, value ) );
 	}
 
@@ -665,17 +698,24 @@ public class MultipageTiffReader
 		final ByteBuffer tiffHeader = ByteBuffer.allocate( 8 );
 		fileChannel.read( tiffHeader, 0 );
 		final char zeroOne = tiffHeader.getChar( 0 );
-		if (zeroOne == 0x4949)
-			byteOrder_ = ByteOrder.LITTLE_ENDIAN;
-		else if (zeroOne == 0x4d4d)
-			byteOrder_ = ByteOrder.BIG_ENDIAN;
-		else
-			throw new IOException("Error reading Tiff header");
+		switch (zeroOne)
+		{
+			case 0x4949:
+				byteOrder_ = ByteOrder.LITTLE_ENDIAN;
+				break;
+			case 0x4d4d:
+				byteOrder_ = ByteOrder.BIG_ENDIAN;
+				break;
+			default:
+				throw new IOException("Error reading Tiff header");
+		}
 
 		tiffHeader.order( byteOrder_ );
 		final short twoThree = tiffHeader.getShort( 2 );
-		if (twoThree != 42)
+		if (twoThree != 42) 
+		{
 			throw new IOException("Tiff identifier code incorrect");
+		}
 
 		return unsignInt( tiffHeader.getInt( 4 ) );
 	}
@@ -683,13 +723,21 @@ public class MultipageTiffReader
 	public void close() throws IOException
 	{
 		for ( final FileChannel fileChannel : this.fileChannels )
-			if ( fileChannel != null )
+		{
+			if ( fileChannel != null ) 
+			{
 				fileChannel.close();
+			}
+		}
 		this.fileChannels.clear();
 
 		for ( final RandomAccessFile raFile : this.raFiles )
-		if ( raFile != null )
-			raFile.close();
+		{
+			if ( raFile != null ) 
+			{
+				raFile.close();
+			}
+		}
 		this.raFiles.clear();
 	}
 
@@ -756,16 +804,20 @@ public class MultipageTiffReader
 		{
 			final Object o = summaryMetadata_.get( "z-step_um" );
 
-			if ( o == null )
+			if ( o == null ) 
+			{
 				return 1.0;
-			else
+			} else
 			{
 				final double z = Double.parseDouble( o.toString() );
 
-				if ( z <= 0 )
+				if ( z <= 0 ) 
+				{
 					return 1;
-				else
+				} else
+				{
 					return z;
+				}
 			}
 		}
 		else
@@ -782,8 +834,10 @@ public class MultipageTiffReader
 		final int totalNum = numChannelsAndAngles();
 		final int numAngles = numAngles();
 
-		if ( totalNum % numAngles != 0 )
+		if ( totalNum % numAngles != 0 ) 
+		{
 			throw new RuntimeException( "Channels & Angle number is not symmetric. This is not supported. TotalNumCh=" + totalNum + ", numAngles=" + numAngles );
+		}
 
 		return totalNum / numAngles();
 	}
@@ -799,7 +853,9 @@ public class MultipageTiffReader
 		final HashSet< Integer > uniqueAngles = new HashSet< Integer >();
 
 		for ( int i = 0; i < entries.length; ++i )
+		{
 			uniqueAngles.add( Integer.parseInt( entries[ i ] ) );
+		}
 
 		return uniqueAngles.size();
 	}
@@ -812,8 +868,10 @@ public class MultipageTiffReader
 			return String.valueOf( angleId );
 		}
 
-		if ( this.angleNames != null )
+		if ( this.angleNames != null ) 
+		{
 			return this.angleNames.get( angleId );
+		}
 
 		// MVRotations = 0_90_0_90
 		// >>> channels increasing, angles increasing faster
@@ -845,8 +903,10 @@ public class MultipageTiffReader
 			return String.valueOf( channelId );
 		}
 
-		if ( this.channelNames != null )
+		if ( this.channelNames != null ) 
+		{
 			return this.channelNames.get( channelId );
+		}
 
 		// ChNames: ["Camera_A-561","Camera_B-561","Camera_A-488","Camera_B-488"]
 
@@ -854,8 +914,10 @@ public class MultipageTiffReader
 		{
 			String as = summaryMetadata_.get( "ChNames" ).toString().trim();
 	
-			if ( as.startsWith( "[" ) && as.endsWith( "]") )
+			if ( as.startsWith( "[" ) && as.endsWith( "]") ) 
+			{
 				as = as.substring( 1, as.length() - 1 );
+			}
 	
 			final String[] entries = as.split( "," );
 	
@@ -867,10 +929,13 @@ public class MultipageTiffReader
 
 			String entry = entries[ interleavedId( channelId, 0 ) ];
 
-			if ( entry.indexOf( '-' ) > 0 )
+			if ( entry.indexOf( '-' ) > 0 ) 
+			{
 				return entry.substring( entry.indexOf( '-' )  + 1, entry.length() - 1 );
-			else
+			} else
+			{
 				return entry.substring( 1, entry.length() - 1 );
+			}
 		}
 		catch ( Exception e )
 		{
@@ -883,28 +948,32 @@ public class MultipageTiffReader
 	{
 		final double[] r = rotationAxis();
 
-		if ( r[ 0 ] == 1 && r[ 1 ] == 0 && r[ 2 ] == 0 )
+		if ( r[ 0 ] == 1 && r[ 1 ] == 0 && r[ 2 ] == 0 ) {
 			return "X-Axis";
-		else if ( r[ 0 ] == 0 && r[ 1 ] == 1 && r[ 2 ] == 0 )
+		} else if ( r[ 0 ] == 0 && r[ 1 ] == 1 && r[ 2 ] == 0 ) {
 			return "Y-Axis";
-		else if ( r[ 0 ] == 0 && r[ 0 ] == 1 && r[ 1 ] == 0 )
+		} else if ( r[ 0 ] == 0 && r[ 0 ] == 1 && r[ 1 ] == 0 ) {
 			return "Z-Axis";
-		else
+		} else
+		{
 			return "Rotation Axis Vector: " + Util.printCoordinates( r );
+		}
 	}
 
 	public int rotationAxisIndex()
 	{
 		final double[] r = rotationAxis();
 
-		if ( r[ 0 ] == 1 && r[ 1 ] == 0 && r[ 2 ] == 0 )
+		if ( r[ 0 ] == 1 && r[ 1 ] == 0 && r[ 2 ] == 0 ) {
 			return 0;
-		else if ( r[ 0 ] == 0 && r[ 1 ] == 1 && r[ 2 ] == 0 )
+		} else if ( r[ 0 ] == 0 && r[ 1 ] == 1 && r[ 2 ] == 0 ) {
 			return 1;
-		else if ( r[ 0 ] == 0 && r[ 0 ] == 1 && r[ 1 ] == 0 )
+		} else if ( r[ 0 ] == 0 && r[ 0 ] == 1 && r[ 1 ] == 0 ) {
 			return 2;
-		else
+		} else
+		{
 			return -1;
+		}
 	}
 
 	public void setRotAxis( final double[] axis ) { this.rotAxis = axis; }
@@ -928,11 +997,12 @@ public class MultipageTiffReader
 		}
 	}
 
-	final private static long unsignInt( final int i )
+	private static long unsignInt( final int i )
 	{
 		long val = Integer.MAX_VALUE & i;
-		if (i < 0)
+		if (i < 0) {
 			val += BIGGEST_INT_BIT;
+		}
 
 		return val;
 	}
@@ -971,7 +1041,9 @@ public class MultipageTiffReader
 		MultipageTiffReader r = new MultipageTiffReader( f );
 
 		for ( final String k : r.getSummaryMetadata().keySet() )
+		{
 			System.out.println( k + ": " + r.getSummaryMetadata().get( k ) );
+		}
 
 		final String pixelType = r.getPixelType();
 
@@ -990,11 +1062,15 @@ public class MultipageTiffReader
 		System.out.println( "numAngles: " + r.numAngles() );
 		System.out.println( "rotation axis: " + Util.printCoordinates( r.rotationAxis() ) );
 		for ( int i = 0; i < r.numAngles(); ++i )
+		{
 			System.out.println( "angle " + i + " rotation: "  + r.rotationAngle( i ) );
+		}
 		
 		System.out.println( "numChannels: " + r.numChannels() );
 		for ( int i = 0; i < r.numChannels(); ++i )
+		{
 			System.out.println( "channel " + i + " name: "  + r.channelName( i ) );
+		}
 		
 		System.out.println( "numTimepoints: " + r.numTimepoints() );
 		System.out.println( "numPositions: " + r.numPositions() );
