@@ -91,9 +91,12 @@ public class MultipageTiffReader
 	public static final char IMAGE_DESCRIPTION = 270;
 
 	public static final char MM_METADATA = 51123;
-
+	
 	public static String lastDisplayedFile;
 
+	private static final String TAG_PIXELSIZE = "PixelSize_um";
+	private static final String TAG_PIXELTYPE = "PixelType";
+	
 	private ByteOrder byteOrder_;
 	private List< File > files;
 	private List< RandomAccessFile > raFiles;
@@ -150,52 +153,98 @@ public class MultipageTiffReader
 			if ( lastDisplayedFile == null )
 				lastDisplayedFile = "";
 
-			if ( !lastDisplayedFile.equals( file.getAbsolutePath() ) )
-				IOFunctions.printlnSafe( "Using the following files for the MicroManager ImgLoader: " );
-
-			for ( i = 0; i < this.files.size(); ++i )
+			if (!lastDisplayedFile.equals(file.getAbsolutePath()))
 			{
-				final File f = this.files.get( i );
+				IOFunctions.printlnSafe("Using the following files for the MicroManager ImgLoader: ");
+			}
 
-				if ( !lastDisplayedFile.equals( file.getAbsolutePath() ) )
-					IOFunctions.printlnSafe( f.getAbsolutePath() );
+			for (i = 0; i < this.files.size(); ++i)
+			{
+				final File f = this.files.get(i);
 
-				this.raFiles.add( new RandomAccessFile( f, "rw" ) );
-				this.fileChannels.add( this.raFiles.get( this.raFiles.size() - 1 ).getChannel() );
+				if (!lastDisplayedFile.equals(file.getAbsolutePath()))
+				{
+					IOFunctions.printlnSafe(f.getAbsolutePath());
+				}
+
+				this.raFiles.add(new RandomAccessFile(f, "rw"));
+				this.fileChannels.add(this.raFiles.get(this.raFiles.size() - 1).getChannel());
 			}
 
 			lastDisplayedFile = file.getAbsolutePath();
-		}
-		catch ( Exception e )
+		} catch (Exception e)
 		{
 			e.printStackTrace();
-			throw new IOException( "Can't successfully open file: " + this.files.get( i ).getName() + ": " + e );
+			throw new IOException("Can't successfully open file: " + this.files.get(i).getName() + ": " + e);
 		}
 
 		// Assuming byteorders to be the same, where the first image has the last word
-		for ( i = this.fileChannels.size() - 1; i >= 0; --i )
-			readHeader( this.fileChannels.get( i ) );
+		for (i = this.fileChannels.size() - 1; i >= 0; --i)
+		{
+			readHeader(this.fileChannels.get(i));
+		}
 
-		summaryMetadata_ = new HashMap< String, Object >();
+		summaryMetadata_ = new HashMap< String, Object>();
 
 		// updating the summary metadata object, the first image has the last word if duplicate entries are present
-		for ( i = this.fileChannels.size() - 1; i >= 0; --i )
-			readSummaryMD( this.fileChannels.get( i ), summaryMetadata_ );
+		for (i = this.fileChannels.size() - 1; i >= 0; --i)
+		{
+			readSummaryMD(this.fileChannels.get(i), summaryMetadata_);
+		}
 
-		if ( summaryMetadata_ == null )
-			throw new IOException( "Could not read metadata" );
+		if (summaryMetadata_ == null)
+		{
+			throw new IOException("Could not read metadata");
+		}
 
-		this.indexMap_ = new HashMap< String, Pair< Long, FileChannel > >();
+		this.indexMap_ = new HashMap< String, Pair< Long, FileChannel>>();
 
 		try
 		{
-			for ( i = 0; i < this.files.size(); ++i )
-				readIndexMap( this.fileChannels.get( i ), indexMap_ );
-		}
-		catch ( Exception e )
+			for (i = 0; i < this.files.size(); ++i)
+			{
+				readIndexMap(this.fileChannels.get(i), indexMap_);
+			}
+		} catch (Exception e)
 		{
 			e.printStackTrace();
-			throw new IOException( "Reading of dataset unsuccessful for file: " + this.files.get( i ).getName() );
+			throw new IOException("Reading of dataset unsuccessful for file: " + this.files.get(i).getName());
+		}
+
+		// some MM versions have certain tags only in the per-image metadata
+		// since they are not in the summary, look in the first image
+		String[] keys = (String[]) indexMap_.keySet().toArray(new String[indexMap_.keySet().size()]);
+		Pair<Object, HashMap<String, Object>> img = this.readImage(keys[0]);
+		HashMap<String, Object> imageTags = img.getB();
+		// other per-image metadata can be injected into summarymetadat 
+		// here if needed
+		for (String key : imageTags.keySet())
+		{
+			if (key.equals(TAG_PIXELSIZE))
+			{
+				summaryMetadata_.put(TAG_PIXELSIZE, imageTags.get(TAG_PIXELSIZE));
+			} else if (key.equals("Width"))
+			{
+				summaryMetadata_.put("Width", imageTags.get("Width"));
+			} else if (key.equals("Height"))
+			{
+				summaryMetadata_.put("Height", imageTags.get("Height"));
+			}
+		}
+
+		// This code depends on the following tags being present and being at least 1.  
+		// Make sure of that now
+		if (!summaryMetadata_.containsKey("Frames") || summaryMetadata_.get("Frames").equals("0"))
+		{
+			summaryMetadata_.put("Frames", "1");
+		}
+		if (!summaryMetadata_.containsKey("Positions") || summaryMetadata_.get("Positions").equals("0"))
+		{
+			summaryMetadata_.put("Positions", "1");
+		}
+		if (!summaryMetadata_.containsKey("Channels") || summaryMetadata_.get("Channels").equals("0"))
+		{
+			summaryMetadata_.put("Channels", "1");
 		}
 	}
 
@@ -204,7 +253,7 @@ public class MultipageTiffReader
 		try
 		{
 			if ( summaryMetadata_ != null )
-				return summaryMetadata_.get( "PixelType" ).toString();
+				return summaryMetadata_.get( TAG_PIXELTYPE ).toString();
 		}
 		catch ( Exception e)
 		{
@@ -251,7 +300,7 @@ public class MultipageTiffReader
 
 	public HashMap< String, Object > getSummaryMetadata() { return summaryMetadata_; }
 
-	public Pair< Object, HashMap< String, Object > > readImage( final String label )
+	public final Pair< Object, HashMap< String, Object > > readImage( final String label )
 	{
 		if ( indexMap_.containsKey( label ) )
 		{
@@ -318,19 +367,27 @@ public class MultipageTiffReader
 			// >>> channels increasing, angles increasing faster
 
 			// fake the multiviewdata if necessary
-			if ( !summaryMD.containsKey( "MVRotationAxis" ) )
+			if ( !summaryMD.containsKey( "MVRotationAxis" ) ) {
 				summaryMD.put( "MVRotationAxis", "0_1_0" );
+			}
 
 			if ( !summaryMD.containsKey( "MVRotations" ) )
 			{
 				final int numChannels = Integer.parseInt( summaryMD.get( "Channels" ).toString() );
 
-				if ( numChannels == 2 )
-					summaryMD.put( "MVRotations", "0_90" );
-				else if ( numChannels == 4 )
-					summaryMD.put( "MVRotations", "0_90_0_90" );
-				else if ( numChannels == 6 )
-					summaryMD.put( "MVRotations", "0_90_0_90_0_90" );
+				switch (numChannels) {
+					case 2:
+						summaryMD.put( "MVRotations", "0_90" );
+						break;
+					case 4:
+						summaryMD.put( "MVRotations", "0_90_0_90" );
+						break;
+					case 6:
+						summaryMD.put( "MVRotations", "0_90_0_90_0_90" );
+						break;
+					default:
+						break;
+				}
 			}
 
 			summaryMD_.putAll( summaryMD );
@@ -366,17 +423,23 @@ public class MultipageTiffReader
 		String jsonString = json.trim();
 		jsonString = jsonString.substring( 1, jsonString.length() - 1 );
 
-		final HashMap< String, Object > map = new HashMap< String, Object >();
+		final HashMap< String, Object > map = new HashMap<>();
 
 		do
 		{
-			if ( !jsonString.startsWith( "\"" ) )
+			int nextSlash = jsonString.indexOf('\"');
+			if ( nextSlash < 0 )
 			{
-				IOFunctions.printlnSafe( "Failed to parse json string: " + json );
+				char charAt = jsonString.charAt(0);
+				IOFunctions.printlnSafe( "Failed to parse json string: " + charAt );
 				return null;
 			}
-
-			final String key = jsonString.substring( 1, jsonString.indexOf( '\"', 1 ) );
+			int nextNextSlash = jsonString.indexOf( '\"', 1);
+			if (nextNextSlash < nextSlash + 2) 
+			{
+				return map;
+			}
+			final String key = jsonString.substring( nextSlash + 1, nextNextSlash);
 			
 			int valueStart = jsonString.indexOf( "\":" ) + 2;
 			int valueEnd;
@@ -387,7 +450,16 @@ public class MultipageTiffReader
 			}
 			else if ( jsonString.charAt( valueStart ) == '{' )
 			{
-				valueEnd = jsonString.indexOf( '}' ) + 1;
+				valueEnd = valueStart + 1;
+				int nrUnfinishedStarts = 1;
+				while (nrUnfinishedStarts > 0 && valueEnd < jsonString.length()) {
+					if (jsonString.charAt(valueEnd) == '{') {
+						nrUnfinishedStarts++;
+					} else if (jsonString.charAt(valueEnd) == '}') {
+						nrUnfinishedStarts--;
+					}	
+					valueEnd++;
+				}
 			}
 			else if ( jsonString.charAt( valueStart ) == '\"' )
 			{
@@ -397,24 +469,43 @@ public class MultipageTiffReader
 			else
 			{
 				valueEnd = jsonString.indexOf( ',' );
-				if ( valueEnd == -1 )
+				if ( valueEnd == -1 ) {
 					valueEnd = jsonString.length();
+				}
 			}
 
 			final String value = jsonString.substring( valueStart, valueEnd );
 
 			final int nextComma = jsonString.indexOf( ',', valueEnd );
 
-			if ( nextComma == -1 )
+			if ( nextComma == -1 ) {
 				jsonString = "";
-			else
+			} else
+			{
 				jsonString = jsonString.substring( nextComma + 1, jsonString.length() );
+			}
+			
+			if (key.equals("UserData")) {
+				HashMap< String, Object > userDataMap = parseJSONSimple(value);
+				Set<String> keySet = userDataMap.keySet();
+				for (String userKey : keySet)
+				{
+					if (!userKey.equals("Width") && !userKey.equals("Height"))
+					{
+						HashMap< String, Object> propMap = parseJSONSimple((String) userDataMap.get(userKey));
+						if (propMap.containsKey("PropVal"))
+						{
+							map.put(userKey, propMap.get("PropVal"));
+						}
+					}
+				}
+			}
 
 			map.put( key, value );
 		}
 		while ( jsonString.length() > 0 );
 
-		return map;
+			return map;
 	}
 
 	private ByteBuffer readIntoBuffer( final long position, final int length, final FileChannel fileChannel_ ) throws IOException
@@ -447,8 +538,9 @@ public class MultipageTiffReader
 	{
 		final long offset = readOffsetHeaderAndOffset( INDEX_MAP_OFFSET_HEADER, 8, fileChannel );
 		final ByteBuffer header = readIntoBuffer( offset, 8, fileChannel );
-		if ( header.getInt(0) != INDEX_MAP_HEADER )
+		if ( header.getInt(0) != INDEX_MAP_HEADER ) {
 			throw new RuntimeException( "Error reading index map header" );
+		}
 
 		final int numMappings = header.getInt( 4 );
 		final ByteBuffer mapBuffer = readIntoBuffer( offset + 8, 20 * numMappings, fileChannel );
@@ -459,15 +551,17 @@ public class MultipageTiffReader
 			final int frame = mapBuffer.getInt( i * 20 + 8 );
 			final int position = mapBuffer.getInt( i * 20 + 12 );
 			final long imageOffset = unsignInt( mapBuffer.getInt( i * 20 + 16 ) );
-			if ( imageOffset == 0 )
+			if ( imageOffset == 0 ) {
 				break; // end of index map reached
+			}
 
 			// If a duplicate label is read, forget about the previous one
 			// if data has been intentionally overwritten, this gives the most
 			// current version
 			final String label = generateLabel( channel, slice, frame, position );
-			if ( indexMap_.containsKey( label ) )
+			if ( indexMap_.containsKey( label ) ) {
 				IOFunctions.printlnSafe( "ERROR!!! Label: " + label + " already present." );
+			}
 
 			//System.out.println( label + " " + getFileForFileChannel( fileChannel ).getName() );
 
@@ -611,31 +705,50 @@ public class MultipageTiffReader
 	public int depth() { return Integer.parseInt( summaryMetadata_.get( "Slices" ).toString() ); }
 	public double calX()
 	{
-		if ( Double.isNaN( calX ) )
+		if (Double.isNaN(calX))
 		{
-			final double x = Double.parseDouble( summaryMetadata_.get( "PixelSize_um" ).toString() );
-			
-			if ( x <= 0 )
-				return 1;
-			else
-				return x;
-		}
-		else
-			return calX;
-	}
-	public double calY()
-	{
-		if ( Double.isNaN( calY ) )
-		{
-			final double y = Double.parseDouble( summaryMetadata_.get( "PixelSize_um" ).toString() );
+			if (summaryMetadata_.containsKey(TAG_PIXELSIZE))
+			{
+				final double x = Double.parseDouble(summaryMetadata_.get(TAG_PIXELSIZE).toString());
 
-			if ( y <= 0 )
-				return 1;
-			else
-				return y;
+				if (x <= 0)
+				{
+					return 1.0;
+				} else
+				{
+					return x;
+				}
+			} else
+			{
+				return 1.0;
+			}
+		} else
+		{
+			return calX;
 		}
-		else
+	}
+	public double calY() {
+		if (Double.isNaN(calY))
+		{
+			if (summaryMetadata_.containsKey(TAG_PIXELSIZE))
+			{
+				final double y = Double.parseDouble(summaryMetadata_.get(TAG_PIXELSIZE).toString());
+
+				if (y <= 0)
+				{
+					return 1;
+				} else
+				{
+					return y;
+				}
+			} else
+			{
+				return 1.0;
+			}
+		} else
+		{
 			return calY;
+		}
 	}
 	public double calZ()
 	{
